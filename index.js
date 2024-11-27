@@ -74,53 +74,51 @@ app.post(
     try {
       const verificationURL = "https://www.google.com/recaptcha/api/siteverify";
       const secretKey = "6LdBamQqAAAAAPvYrPNyixxCsCvRpThzGO4BGDld";
-
+    
       const response = await axios.post(verificationURL, null, {
         params: {
           secret: secretKey,
           response: recaptchaValue,
         },
       });
-
+    
       const { success } = response.data;
-
-      if (success) {
-        // Query the user table to validate the credentials
-        const query = 'SELECT * FROM users WHERE firstname = ?';
-        db.query(query, [username], async (error, results) => {
-          if (error) {
-            console.error('Error executing SQL query', error);
-            return res.status(500).json({ error: 'Internal server error' });
-          }
-
-          if (results.length > 0) {
-            const user = results[0];
-            const passwordMatch = await bcrypt.compare(password, user.password);
-
-            if (passwordMatch) {
-              // Generate JWT token
-              const token = jwt.sign({ userId: user.id }, 'secret', { expiresIn: '1d' });
-              req.session.usersession = user;
-              return res.status(200).json({ token: token, user, recaptcha: recaptchaValue });
-            } else {
-              // Invalid password
-              console.log("not logged in");
-              return res.status(401).json({ error: 'Invalid credentials' });
-            }
-          } else {
-            // Invalid username
-            return res.status(401).json({ error: 'Invalid credentials' });
-          }
-        });
-      } else {
+    
+      if (!success) {
         // reCAPTCHA verification failed
         return res.status(400).json({ error: "reCAPTCHA verification failed" });
       }
+    
+      // Query the user table to validate the credentials
+      const query = 'SELECT * FROM users WHERE firstname = ?';
+      db.query(query, [username], async (error, results) => {
+        if (error) {
+          console.error('Error executing SQL query', error);
+          return res.status(500).json({ error: "Internal server error" });
+        }
+    
+        if (results.length === 0) {
+          // Invalid username
+          return res.status(401).json({ error: "Invalid username or password" });
+        }
+    
+        const user = results[0];
+        const passwordMatch = await bcrypt.compare(password, user.password);
+    
+        if (!passwordMatch) {
+          // Invalid password
+          return res.status(401).json({ error: "Invalid username or password" });
+        }
+    
+        // Generate JWT token
+        const token = jwt.sign({ userId: user.id }, 'secret', { expiresIn: '1d' });
+        req.session.usersession = user;
+        return res.status(200).json({ token, user });
+      });
     } catch (error) {
-      // Error during reCAPTCHA verification
-      console.error("Error during reCAPTCHA verification", error);
-      return res.status(500).json({ error: "Error during reCAPTCHA verification" });
-    }
+      console.error("Error during login process", error);
+      return res.status(500).json({ error: "An unexpected error occurred" });
+    }    
   }
 );
 
